@@ -126,15 +126,38 @@ func (m *MaxEntIIS) solveBetaDelta(fi, label int) float64 {
 	return math.Log(epobf/result) * m.M
 }
 
-func (m *MaxEntIIS) trainLabels(start, end int, group *sync.WaitGroup) {
+func (m *MaxEntIIS) trainLabels(label int, group *sync.WaitGroup) {
 	defer group.Done()
-	for li := start; li < end; li++ {
-		for fi := 0; fi < m.XFeatureNum; fi++ {
+
+	subWg := &sync.WaitGroup{}
+	subWg.Add(3)
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		for fi := 0; fi < 262; fi++ {
 			if _, ok := m.featureRecord[fi]; ok {
-				m.w[li][fi] += m.solveBetaDelta(fi, li)
+				m.w[label][fi] += m.solveBetaDelta(fi, label)
 			}
 		}
-	}
+	}(subWg)
+
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		for fi := 262; fi < 522; fi++ {
+			if _, ok := m.featureRecord[fi]; ok {
+				m.w[label][fi] += m.solveBetaDelta(fi, label)
+			}
+		}
+	}(subWg)
+
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		for fi := 522; fi < m.XFeatureNum; fi++ {
+			if _, ok := m.featureRecord[fi]; ok {
+				m.w[label][fi] += m.solveBetaDelta(fi, label)
+			}
+		}
+	}(subWg)
+	subWg.Wait()
 }
 
 func (m *MaxEntIIS) StartTraining(iter int) {
@@ -143,12 +166,16 @@ func (m *MaxEntIIS) StartTraining(iter int) {
 		m.computeExw()
 		wg := sync.WaitGroup{}
 		start := time.Now()
-		for li := 0; li < m.labelYCount; li += 2 {
+		for li := 0; li < m.labelYCount; li += 1 {
 			wg.Add(1)
-			go m.trainLabels(li, li+2, &wg)
+			go m.trainLabels(li, &wg)
 		}
 		wg.Wait()
 		fmt.Println("iter ", i, "time cost: ", time.Now().Sub(start))
+
+		if iter%50 == 0 {
+			m.Test()
+		}
 	}
 }
 
@@ -180,5 +207,5 @@ func (m *MaxEntIIS) Test() {
 			top1Hit += 1
 		}
 	}
-	fmt.Println("accuracy：", float64(top1Hit)/float64(testCount))
+	fmt.Println("test accuracy：", float64(top1Hit)/float64(testCount))
 }
