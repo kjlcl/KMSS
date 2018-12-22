@@ -180,7 +180,7 @@ func (m *MaxEntIIS) StartTraining(iter int) {
 		wg.Wait()
 		fmt.Println("iter ", i, "time cost: ", time.Now().Sub(start))
 
-		if iter%50 == 0 {
+		if i%50 == 0 {
 			m.Test()
 		}
 	}
