@@ -139,25 +139,26 @@ func (m *MaxEntIIS) trainLabels(label int, group *sync.WaitGroup) {
 	subWg := &sync.WaitGroup{}
 	subWg.Add(4)
 	for i := 0; i < 4; i++ {
-		go func(wg *sync.WaitGroup) {
+		go func(start int, wg *sync.WaitGroup) {
 			defer wg.Done()
-			for fi := i * 196; fi < (i+1)*196; fi++ {
+			for fi := start * 196; fi < (start+1)*196; fi++ {
 				if _, ok := m.featureRecord[fi]; ok {
 					m.w[label][fi] += m.solveBetaDelta(fi, label)
 				}
 			}
-		}(subWg)
+		}(i, subWg)
 	}
 	subWg.Wait()
+	fmt.Println(label, " done")
 }
 
 func (m *MaxEntIIS) StartTraining(iter int) {
 	for i := 0; i < iter; i++ {
-		fmt.Println("iter ", i, " start")
-		wg := sync.WaitGroup{}
 		start := time.Now()
+		fmt.Println("iter ", i, " ----------- ", start)
+		wg := sync.WaitGroup{}
+		wg.Add(m.labelYCount)
 		for li := 0; li < m.labelYCount; li += 1 {
-			wg.Add(1)
 			go m.trainLabels(li, &wg)
 		}
 		wg.Wait()
