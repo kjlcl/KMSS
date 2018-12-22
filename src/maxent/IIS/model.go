@@ -15,6 +15,7 @@ type MaxEntIIS struct {
 
 	XFeatureNum  int
 	w            [][]float64
+	expW         [][]float64
 	probSampleX  map[int]float64
 	probSampleXY map[string]float64
 
@@ -35,15 +36,19 @@ func (m *MaxEntIIS) LoadData(trainPath, testPath string) {
 
 	m.XFeatureNum = m.train[0].GetDataVectorLen()
 	m.N = 1 / float64(len(m.train))
-	m.w = make([][]float64, m.labelYCount)
 	rand.Seed(88888)
-	for i := range m.w {
+	m.w = make([][]float64, m.labelYCount)
+	for i := 0; i < m.labelYCount; i++ {
 		m.w[i] = make([]float64, m.XFeatureNum)
 		for j := 0; j < m.XFeatureNum; j++ {
 			m.w[i][j] = rand.Float64()
 		}
 	}
 
+	m.expW = make([][]float64, m.labelYCount)
+	for i := 0; i < m.labelYCount; i++ {
+		m.expW[i] = make([]float64, m.XFeatureNum)
+	}
 	fmt.Println("load data done")
 
 	m.initProbSample()
@@ -83,21 +88,23 @@ func (m *MaxEntIIS) initProbSample() {
 
 }
 
-func (m *MaxEntIIS) computeExw() {
-	wg := sync.WaitGroup{}
-	wg.Add(m.labelYCount)
-	for li := 0; li < m.labelYCount; li += 1 {
-		go func(label int, w *sync.WaitGroup) {
-			defer w.Done()
-			for j := 0; j < m.XFeatureNum; j++ {
-				if m.w[label][j] > 0 {
-					m.w[label][j] = math.Exp(m.w[label][j])
+func (m *MaxEntIIS) computeExpW(label int, group *sync.WaitGroup) {
+
+	defer group.Done()
+
+	subWg := &sync.WaitGroup{}
+	subWg.Add(4)
+	for i := 0; i < 4; i++ {
+		go func(start int, wg *sync.WaitGroup) {
+			defer wg.Done()
+			for fi := start * 196; fi < (start+1)*196; fi++ {
+				if _, ok := m.featureRecord[fi]; ok {
+					m.expW[label][fi] = math.Exp(m.w[label][fi])
 				}
 			}
-		}(li, &wg)
+		}(i, subWg)
 	}
-	wg.Wait()
-
+	subWg.Wait()
 }
 
 func (m *MaxEntIIS) modelCompute(sample *data.MnistSample) float64 {
@@ -105,18 +112,17 @@ func (m *MaxEntIIS) modelCompute(sample *data.MnistSample) float64 {
 	normalization := 0.0
 	numerator := 0.0
 	for yi := range m.w {
-		tmp := 0.0
-		wi := m.w[yi]
+		tmp := 1.0
+		wi := m.expW[yi]
 		for i, value := range x {
 			if value == 1 {
-				tmp += wi[i]
+				tmp *= wi[i]
 			}
 		}
-		expTmp := math.Exp(tmp)
 		if yi == sample.GetLabel() {
-			numerator = expTmp
+			numerator = tmp
 		}
-		normalization += expTmp
+		normalization += tmp
 	}
 	return numerator / normalization
 }
@@ -149,20 +155,25 @@ func (m *MaxEntIIS) trainLabels(label int, group *sync.WaitGroup) {
 		}(i, subWg)
 	}
 	subWg.Wait()
-	fmt.Println(label, " done")
 }
 
 func (m *MaxEntIIS) StartTraining(iter int) {
 	for i := 0; i < iter; i++ {
 		start := time.Now()
-		fmt.Println("iter ", i, " ----------- ", start)
+		fmt.Println(" ------ ", start, " ------ iter", i)
 		wg := sync.WaitGroup{}
+		wg.Add(m.labelYCount)
+		for li := 0; li < m.labelYCount; li += 1 {
+			m.computeExpW(li, &wg)
+		}
+		wg.Wait()
+
 		wg.Add(m.labelYCount)
 		for li := 0; li < m.labelYCount; li += 1 {
 			go m.trainLabels(li, &wg)
 		}
 		wg.Wait()
-		fmt.Println("iter ", i, "time cost: ", time.Now().Sub(start))
+		fmt.Println("iter", i, "time cost: ", time.Now().Sub(start))
 
 		m.Test()
 	}
