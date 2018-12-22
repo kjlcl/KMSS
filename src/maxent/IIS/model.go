@@ -57,7 +57,7 @@ func (m *MaxEntIIS) initProbSample() {
 	m.probSampleXY = make(map[string]float64)
 	m.featureRecord = make(map[int]bool)
 	globalCounter := 0
-	m.M = 0.0005
+	m.M = 0.0002
 	for _, X := range m.train {
 		label := X.GetLabel()
 		for fi, xi := range X.GetDataVec() {
@@ -85,13 +85,20 @@ func (m *MaxEntIIS) initProbSample() {
 }
 
 func (m *MaxEntIIS) computeExw() {
-	for i := 0; i < m.labelYCount; i++ {
-		for j := 0; j < m.XFeatureNum; j++ {
-			if m.w[i][j] > 0 {
-				m.expW[i][j] = math.Exp(m.w[i][j])
+	wg := sync.WaitGroup{}
+	wg.Add(m.labelYCount)
+	for li := 0; li < m.labelYCount; li += 1 {
+		go func(label int, w *sync.WaitGroup) {
+			defer w.Done()
+			for j := 0; j < m.XFeatureNum; j++ {
+				if m.w[label][j] > 0 {
+					m.expW[label][j] = math.Exp(m.w[label][j])
+				}
 			}
-		}
+		}(li, &wg)
 	}
+	wg.Wait()
+
 }
 
 func (m *MaxEntIIS) modelCompute(sample *data.MnistSample) float64 {
