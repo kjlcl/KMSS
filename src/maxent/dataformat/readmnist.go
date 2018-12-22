@@ -11,6 +11,7 @@ func ReadMnistCsv(filePath string) (result []*MnistSample, yCount int) {
 
 	yMap := make(map[int]uint8)
 	if file, err := os.Open(filePath); err == nil {
+		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
 			line := scanner.Text()

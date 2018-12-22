@@ -1,10 +1,14 @@
 package IIS
 
 import (
+	"bufio"
 	"fmt"
 	"math"
 	"math/rand"
 	"maxent/dataformat"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -46,6 +50,7 @@ func (m *MaxEntIIS) LoadData(trainPath, testPath string) {
 			m.w[i][j] = rand.Float64()
 		}
 	}
+	m.LoadModel()
 
 	m.expW = make([][]float64, m.labelYCount)
 	for i := 0; i < m.labelYCount; i++ {
@@ -234,6 +239,7 @@ func (m *MaxEntIIS) StartTraining(iter int) {
 
 		m.Test()
 	}
+	m.SaveModel()
 }
 
 func (m *MaxEntIIS) Predict(item *data.MnistSample) bool {
@@ -266,4 +272,52 @@ func (m *MaxEntIIS) Test() {
 		}
 	}
 	fmt.Println("test accuracy：", float64(top1Hit)/float64(testCount))
+}
+
+func (m *MaxEntIIS) SaveModel() {
+	fileName := fmt.Sprintf("./last_model.dat")
+	if f, err := os.Create(fileName); err == nil {
+		defer f.Close()
+		for li := 0; li < m.labelYCount; li += 1 {
+			for fi := 0; fi < m.XFeatureNum; fi += 1 {
+				if fi == m.XFeatureNum-1 {
+					if _, err := f.WriteString(
+						fmt.Sprintf("%f", m.w[li][fi])); err != nil {
+
+					}
+				} else {
+					if _, err := f.WriteString(
+						fmt.Sprintf("%f,", m.w[li][fi])); err != nil {
+
+					}
+				}
+			}
+			if _, err := f.WriteString("\n"); err != nil {
+				break
+			}
+		}
+	}
+}
+
+func (m *MaxEntIIS) LoadModel() bool {
+	fileName := fmt.Sprintf("./last_model.dat")
+	if file, err := os.Open(fileName); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		label := 0
+		for scanner.Scan() {
+			line := scanner.Text()
+			items := strings.Split(line, ",")
+			for fi := 0; fi < len(items); fi++ {
+				m.w[label][fi], _ = strconv.ParseFloat(items[fi], 64)
+			}
+			if label < m.labelYCount {
+				label++
+			} else {
+				break
+			}
+		}
+		return true
+	}
+	return false
 }
