@@ -3,6 +3,7 @@ package IIS
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"maxent/dataformat"
 	"sync"
 	"time"
@@ -14,7 +15,6 @@ type MaxEntIIS struct {
 
 	XFeatureNum  int
 	w            [][]float64
-	expW         [][]float64
 	probSampleX  map[int]float64
 	probSampleXY map[string]float64
 
@@ -36,13 +36,12 @@ func (m *MaxEntIIS) LoadData(trainPath, testPath string) {
 	m.XFeatureNum = m.train[0].GetDataVectorLen()
 	m.N = 1 / float64(len(m.train))
 	m.w = make([][]float64, m.labelYCount)
+	rand.Seed(88888)
 	for i := range m.w {
 		m.w[i] = make([]float64, m.XFeatureNum)
-	}
-
-	m.expW = make([][]float64, m.labelYCount)
-	for i := range m.expW {
-		m.expW[i] = make([]float64, m.XFeatureNum)
+		for j := 0; j < m.XFeatureNum; j++ {
+			m.w[i][j] = rand.Float64()
+		}
 	}
 
 	fmt.Println("load data done")
@@ -92,7 +91,7 @@ func (m *MaxEntIIS) computeExw() {
 			defer w.Done()
 			for j := 0; j < m.XFeatureNum; j++ {
 				if m.w[label][j] > 0 {
-					m.expW[label][j] = math.Exp(m.w[label][j])
+					m.w[label][j] = math.Exp(m.w[label][j])
 				}
 			}
 		}(li, &wg)
@@ -106,17 +105,18 @@ func (m *MaxEntIIS) modelCompute(sample *data.MnistSample) float64 {
 	normalization := 0.0
 	numerator := 0.0
 	for yi := range m.w {
-		tmp := 1.0
-		wi := m.expW[yi]
+		tmp := 0.0
+		wi := m.w[yi]
 		for i, value := range x {
 			if value == 1 {
-				tmp *= wi[i]
+				tmp += wi[i]
 			}
 		}
+		expTmp := math.Exp(tmp)
 		if yi == sample.GetLabel() {
-			numerator = tmp
+			numerator = expTmp
 		}
-		normalization += tmp
+		normalization += expTmp
 	}
 	return numerator / normalization
 }
@@ -137,40 +137,23 @@ func (m *MaxEntIIS) trainLabels(label int, group *sync.WaitGroup) {
 	defer group.Done()
 
 	subWg := &sync.WaitGroup{}
-	subWg.Add(3)
-	go func(wg *sync.WaitGroup) {
-		defer wg.Done()
-		for fi := 0; fi < 262; fi++ {
-			if _, ok := m.featureRecord[fi]; ok {
-				m.w[label][fi] += m.solveBetaDelta(fi, label)
+	subWg.Add(4)
+	for i := 0; i < 4; i++ {
+		go func(wg *sync.WaitGroup) {
+			defer wg.Done()
+			for fi := i * 196; fi < (i+1)*196; fi++ {
+				if _, ok := m.featureRecord[fi]; ok {
+					m.w[label][fi] += m.solveBetaDelta(fi, label)
+				}
 			}
-		}
-	}(subWg)
-
-	go func(wg *sync.WaitGroup) {
-		defer wg.Done()
-		for fi := 262; fi < 522; fi++ {
-			if _, ok := m.featureRecord[fi]; ok {
-				m.w[label][fi] += m.solveBetaDelta(fi, label)
-			}
-		}
-	}(subWg)
-
-	go func(wg *sync.WaitGroup) {
-		defer wg.Done()
-		for fi := 522; fi < m.XFeatureNum; fi++ {
-			if _, ok := m.featureRecord[fi]; ok {
-				m.w[label][fi] += m.solveBetaDelta(fi, label)
-			}
-		}
-	}(subWg)
+		}(subWg)
+	}
 	subWg.Wait()
 }
 
 func (m *MaxEntIIS) StartTraining(iter int) {
 	for i := 0; i < iter; i++ {
 		fmt.Println("iter ", i, " start")
-		m.computeExw()
 		wg := sync.WaitGroup{}
 		start := time.Now()
 		for li := 0; li < m.labelYCount; li += 1 {
@@ -180,9 +163,7 @@ func (m *MaxEntIIS) StartTraining(iter int) {
 		wg.Wait()
 		fmt.Println("iter ", i, "time cost: ", time.Now().Sub(start))
 
-		if i%50 == 0 {
-			m.Test()
-		}
+		m.Test()
 	}
 }
 
@@ -191,13 +172,14 @@ func (m *MaxEntIIS) Predict(item *data.MnistSample) bool {
 	max := 0.0
 	predictLabel := -1
 	for yi := range m.w {
-		tmp := 1.0
-		wi := m.expW[yi]
+		tmp := 0.0
+		wi := m.w[yi]
 		for i, value := range x {
 			if value == 1 {
-				tmp *= wi[i]
+				tmp += wi[i]
 			}
 		}
+		tmp = math.Exp(tmp)
 		if tmp > max {
 			max = tmp
 			predictLabel = yi
