@@ -1,6 +1,8 @@
 package main
 
-import "maxent/IIS"
+import (
+	"maxent/IIS"
+)
 
 func main() {
 
@@ -12,6 +14,6 @@ func main() {
 		"./resource/Mnist/mnist_test.csv",
 		"./resource/Mnist/mnist_train.csv")
 
-	model.StartTraining(1)
+	model.StartTraining(200)
 	model.Test()
 }
