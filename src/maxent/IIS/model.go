@@ -238,10 +238,6 @@ func (m *MaxEntIIS) LoadModel() bool {
 	return false
 }
 
-func (m *MaxEntIIS) TestAllPwXY() {
-	m.calcAllPwXY()
-}
-
 func (m *MaxEntIIS) calcAllPwXY() {
 
 	for i, item := range m.train {
@@ -291,5 +287,21 @@ func (m *MaxEntIIS) calcAllPwXYV2() {
 				}
 			}
 		}
+	}
+}
+
+func (m *MaxEntIIS) TestIter() {
+	m.calcAllPwXYV2()
+
+	deltaList := make([]float64, m.featureFuncLen)
+	for fi, feature := range m.featureArray {
+		/**
+		将calcAllPwXYV2中计算的 m.allPwXy[fi] * 1 / m.probX提出放到这里
+		*/
+		//deltaList[fi] = math.Log((feature.Prob)/m.allPwXy[fi]) * m.M
+		deltaList[fi] = math.Log((feature.Prob*m.probX)/m.allPwXy[fi]) * m.M
+	}
+	for fi := 0; fi < m.featureFuncLen; fi++ {
+		m.featureArray[fi].Weight += deltaList[fi]
 	}
 }
