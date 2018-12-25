@@ -11,9 +11,15 @@ var model = IIS.MaxEntIIS{}
 
 func init() {
 	fmt.Println("test start")
-	//model.LoadData(
-	//	"/Users/liang/Works/KMSS/resource/Mnist/mnist_test.csv",
-	//	"/Users/liang/Works/KMSS/resource/Mnist/mnist_train.csv")
+	model.LoadData(
+		"/Users/liang/Works/KMSS/resource/Mnist/mnist_test.csv",
+		"/Users/liang/Works/KMSS/resource/Mnist/mnist_train.csv")
+}
+
+func BenchmarkExpTest(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		model.TestAllPwXY()
+	}
 }
 
 func ExpTest(b *testing.B) {
