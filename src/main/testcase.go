@@ -1,13 +1,17 @@
 package main
 
 import (
+	"LR"
 	"fmt"
 	"math"
 	"maxent/IIS"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
-func main() {
+func maxent() {
 
 	model := IIS.MaxEntIIS{}
 	model.LoadData(
@@ -32,4 +36,16 @@ func _main() {
 		}
 	}
 	fmt.Println(time.Now().Sub(start))
+}
+
+func main() {
+	a := LR.SoftMaxRegression{}
+	a.InitWeights(300000000)
+
+	a.RandomWriteTest()
+	fmt.Println("done")
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+
+	<-signalChan
 }

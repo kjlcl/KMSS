@@ -118,15 +118,20 @@ func (m *MaxEntIIS) ComputePwXY(sample *data.MnistSample) float64 {
 
 func (m *MaxEntIIS) ComputePwXYV2(dataVec []uint8, label int) float64 {
 	Zw := 0.0
+	maxWeight := 0.0
 	tmpSum := make([]float64, m.labelYCount)
 	for _, feature := range m.featureArray {
 		if feature.XDValue == dataVec[feature.XDIndex] {
 			tmpSum[feature.LabelIndex] += feature.Weight
+			if tmpSum[feature.LabelIndex] > maxWeight {
+				maxWeight = tmpSum[feature.LabelIndex]
+			}
 		}
 	}
 
 	for i := 0; i < m.labelYCount; i++ {
-		tmpSum[i] = math.Exp(tmpSum[i])
+		// -maxWeight 防止溢出
+		tmpSum[i] = math.Exp(tmpSum[i] - maxWeight)
 		Zw += tmpSum[i]
 	}
 	return tmpSum[label] / Zw

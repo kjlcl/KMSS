@@ -1,0 +1,22 @@
+
+log:
+  path: "../logs/%s.log"
+  level: "DEBUG"
+
+lr:
+  train: "../"
+  test: "../"
+  featureLen: 3000000
+  learningRate: 0.01
+  batchCount: 500
+  normal: "l2"
+  normalRate: 0.01
+
+softmax:
+  train: "../"
+  test: "../"
+  featureLen: 784
+  learningRate: 0.01
+  batchCount: 500
+  normal: "l2"
+  normalRate: 0.01
