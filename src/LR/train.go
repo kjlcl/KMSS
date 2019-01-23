@@ -3,6 +3,7 @@ package LR
 import (
 	"bufio"
 	"config"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
@@ -63,8 +64,9 @@ func (lr *LogisticRegression) sigmoid(z float64) float64 {
 }
 
 func (lr *LogisticRegression) Train(iter int) {
-	var training []IndexTrainItem
-	var testing []IndexTrainItem
+	learningRate := config.GetLRConf().LearningRate
+	var training []SparseTrainItem
+	var testing []SparseTrainItem
 	if file, err := os.Open(lr.trainPath); err == nil {
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
@@ -72,13 +74,20 @@ func (lr *LogisticRegression) Train(iter int) {
 			line := scanner.Text()
 			items := strings.Split(line, ",")
 			if label, err := strconv.Atoi(items[0]); err == nil {
-				fs := make([]float64, lr.featureLen)
-				for i, item := range items[1:] {
-					if pixel, err := strconv.ParseFloat(item, 64); err == nil {
-						fs[i] = float64(pixel) / 255
+				fs := make(map[int]float64)
+				for _, item := range items[1:] {
+					pair := strings.Split(item, ":")
+					if len(pair) != 2 {
+						fmt.Println("error format ", line)
+						continue
+					}
+					if score, err := strconv.ParseFloat(pair[1], 64); err == nil {
+						if index, err := strconv.Atoi(pair[0]); err == nil {
+							fs[index] = score
+						}
 					}
 				}
-				training = append(training, IndexTrainItem{Label: label, Features: fs})
+				training = append(training, SparseTrainItem{Label: label, Features: fs})
 			}
 		}
 	}
@@ -89,13 +98,20 @@ func (lr *LogisticRegression) Train(iter int) {
 			line := scanner.Text()
 			items := strings.Split(line, ",")
 			if label, err := strconv.Atoi(items[0]); err == nil {
-				fs := make([]float64, lr.featureLen)
-				for i, item := range items[1:] {
-					if pixel, err := strconv.ParseFloat(item, 64); err == nil {
-						fs[i] = float64(pixel) / 255
+				fs := make(map[int]float64)
+				for _, item := range items[1:] {
+					pair := strings.Split(item, ":")
+					if len(pair) != 2 {
+						fmt.Println("error format ", line)
+						continue
+					}
+					if score, err := strconv.ParseFloat(pair[1], 64); err == nil {
+						if index, err := strconv.Atoi(pair[0]); err == nil {
+							fs[index] = score
+						}
 					}
 				}
-				testing = append(testing, IndexTrainItem{Label: label, Features: fs})
+				testing = append(testing, SparseTrainItem{Label: label, Features: fs})
 			}
 		}
 	}
@@ -115,22 +131,44 @@ func (lr *LogisticRegression) Train(iter int) {
 			for j := 0; j < batchCount; j++ {
 				gradients[j] = 0.0
 			}
+			updateIndex := make(map[int]int)
+			db := 0.0
 			for j := start; j < end; j++ {
 				item := training[j]
 				tmp := 0.0
-				for k := 0; k < lr.featureLen; k++ {
-					tmp += item.Features[k] * lr.weights[k]
+				for k, score := range item.Features {
+					tmp += score * lr.weights[k]
+					updateIndex[k] = 1
 				}
 				gradients[j] = float64(item.Label) - tmp - lr.bias
+
+				db += gradients[j]
 			}
-			for f := 0; f < lr.featureLen; f++ {
+			for _, f := range updateIndex {
 				dwf := 0.0
 				for j := start; j < end; j++ {
 					dwf += gradients[j] * training[j].Features[f]
 				}
-				lr.weights[f] += 0.01 * dwf
+				lr.weights[f] += learningRate * dwf / float64(batchCount)
+			}
+			lr.bias += learningRate * (db / float64(batchCount))
+		}
+
+		correctCount := 0
+		testCount := float64(len(testing))
+		for i := 0; i < len(testing); i++ {
+			item := testing[i]
+			sum := 0.0
+			for k, score := range item.Features {
+				sum += lr.weights[k] * score
+			}
+			p := lr.sigmoid(sum + lr.bias)
+			if item.Label == 1 && p >= 0.5 || item.Label == 0 && p < 0.5 {
+				correctCount++
 			}
 		}
+		print("iter ", iter, " ac ", float64(correctCount)/testCount)
+
 	}
 }
 

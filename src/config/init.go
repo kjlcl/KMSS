@@ -26,9 +26,9 @@ type TrainConf struct {
 	TestPath     string  `yaml:"test"`
 	FeatureLen   int     `yaml:"featureLen"`
 	BatchCount   int     `yaml:"batchCount"`
-	LearningRate float32 `yaml:"learningRate"`
+	LearningRate float64 `yaml:"learningRate"`
 	Normal       string  `yaml:"normal"`
-	NormalRate   float32 `yaml:"normalRate"`
+	NormalRate   float64 `yaml:"normalRate"`
 }
 
 func (logConf *LogConf) updateFileName(logName string) {
