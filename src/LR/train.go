@@ -26,10 +26,10 @@ type SoftMaxRegression struct {
 	weights         [][]float64
 	featureLen      int
 	labelCount      int
-	lossGradient    []float64
-	softmax         []float64
+	lossGradient    [][]float64
+	softmax         [][]float64
 	bias            []float64
-	softmaxGradient [][]float64
+	softmaxGradient [][][]float64
 }
 
 type SparseTrainItem struct {
@@ -115,7 +115,7 @@ func (lr *LogisticRegression) Train(iter int) {
 	}
 
 	trainCount := len(training)
-	batchCount := config.GetLRConf().BatchCount
+	batchCount := config.GetLRConf().OneBatch
 	gradients := make([]float64, batchCount)
 	for i := 0; i < iter; i++ {
 		end := trainCount / batchCount
@@ -173,13 +173,23 @@ func (lr *LogisticRegression) Train(iter int) {
 func (smr *SoftMaxRegression) init() {
 	smr.featureLen = 784
 	smr.labelCount = 10
+	oneBatch := config.GetSoftmaxConf().OneBatch
 
-	smr.softmax = make([]float64, smr.labelCount)
-	smr.bias = make([]float64, smr.labelCount)
-	smr.lossGradient = make([]float64, smr.labelCount)
-	smr.softmaxGradient = make([][]float64, smr.labelCount)
-	for i := 0; i < smr.labelCount; i++ {
-		smr.softmaxGradient[i] = make([]float64, smr.labelCount)
+	smr.softmax = make([][]float64, oneBatch)
+	for i := 0; i < oneBatch; i++ {
+		smr.softmax[i] = make([]float64, smr.labelCount)
+	}
+	smr.bias = make([]float64, oneBatch)
+	smr.lossGradient = make([][]float64, oneBatch)
+	for i := 0; i < oneBatch; i++ {
+		smr.lossGradient[i] = make([]float64, smr.labelCount)
+	}
+	smr.softmaxGradient = make([][][]float64, oneBatch)
+	for i := 0; i < oneBatch; i++ {
+		smr.softmaxGradient[i] = make([][]float64, smr.labelCount)
+		for j := 0; j < smr.labelCount; j++ {
+			smr.softmaxGradient[i][j] = make([]float64, smr.labelCount)
+		}
 	}
 
 	smr.weights = make([][]float64, smr.labelCount)
@@ -188,7 +198,7 @@ func (smr *SoftMaxRegression) init() {
 	}
 }
 
-func (smr *SoftMaxRegression) forward(x []float64) {
+func (smr *SoftMaxRegression) forward(batchIndex int, x []float64) {
 
 	max := -1000000000.0
 	for i := 0; i < smr.labelCount; i++ {
@@ -198,26 +208,26 @@ func (smr *SoftMaxRegression) forward(x []float64) {
 		for j := 0; j < len(weights); j++ {
 			tmp += weights[j] * x[j]
 		}
-		smr.softmax[i] = tmp + smr.bias[i]
-		if smr.softmax[i] > max {
-			max = smr.softmax[i]
+		smr.softmax[batchIndex][i] = tmp + smr.bias[i]
+		if smr.softmax[batchIndex][i] > max {
+			max = smr.softmax[batchIndex][i]
 		}
 	}
 	sum := 0.0
 	for i := 0; i < smr.labelCount; i++ {
-		smr.softmax[i] = math.Exp(smr.softmax[i] - max)
-		sum += smr.softmax[i]
+		smr.softmax[batchIndex][i] = math.Exp(smr.softmax[batchIndex][i] - max)
+		sum += smr.softmax[batchIndex][i]
 	}
 	for i := 0; i < smr.labelCount; i++ {
-		smr.softmax[i] = smr.softmax[i] / sum
+		smr.softmax[batchIndex][i] = smr.softmax[batchIndex][i] / sum
 	}
 
 	for i := 0; i < smr.labelCount; i++ {
 		for j := 0; j < smr.labelCount; j++ {
 			if i == j {
-				smr.softmaxGradient[i][j] = smr.softmax[i] * (1.0 - smr.softmax[j])
+				smr.softmaxGradient[batchIndex][i][j] = smr.softmax[batchIndex][i] * (1.0 - smr.softmax[batchIndex][j])
 			} else {
-				smr.softmaxGradient[i][j] = -smr.softmax[i] * smr.softmax[j]
+				smr.softmaxGradient[batchIndex][i][j] = -smr.softmax[batchIndex][i] * smr.softmax[batchIndex][j]
 			}
 		}
 	}
@@ -228,14 +238,15 @@ func (smr *SoftMaxRegression) predict(item *IndexTrainItem) bool {
 	max := -10000000000.0
 	predictLabel := 0
 	weightCount := len(smr.weights[0])
+	softmax := make([]float64, smr.labelCount)
 	for i := 0; i < smr.labelCount; i++ {
 		tmp := 0.0
 		for j := 0; j < weightCount; j++ {
 			tmp += smr.weights[i][j] * item.Features[j]
 		}
-		smr.softmax[i] = tmp + smr.bias[i]
-		if smr.softmax[i] > max {
-			max = smr.softmax[i]
+		softmax[i] = tmp + smr.bias[i]
+		if softmax[i] > max {
+			max = softmax[i]
 			predictLabel = i
 		}
 	}
@@ -302,7 +313,7 @@ func (smr *SoftMaxRegression) Train(iter int) {
 		randArray[i] = i
 	}
 
-	oneBatch := config.GetSoftmaxConf().BatchCount
+	oneBatch := config.GetSoftmaxConf().OneBatch
 	batchSize := trainCount / oneBatch
 	for it := 0; it < iter; it++ {
 		for batchIndex := 0; batchIndex < batchSize; batchIndex++ {
@@ -311,22 +322,32 @@ func (smr *SoftMaxRegression) Train(iter int) {
 			if end > trainCount {
 				end = trainCount
 			}
-			for _, index := range randArray[start:end] {
+			for batchIndex, index := range randArray[start:end] {
 				item := training[randArray[index]]
-				smr.forward(item.Features)
-				for i := 0; i < smr.labelCount; i++ {
-					for j := 0; j < smr.featureLen; j++ {
+				smr.forward(batchIndex, item.Features)
+			}
+			for i := 0; i < smr.labelCount; i++ {
+				for j := 0; j < smr.featureLen; j++ {
+					dw := 0.0
+					for bi, index := range randArray[start:end] {
+						item := training[randArray[index]]
 						if item.Features[j] != 0 {
-							dw := -1.0 / smr.softmax[item.Label] * smr.softmaxGradient[item.Label][i] * item.Features[j]
-							if !math.IsNaN(dw) {
-								smr.weights[i][j] -= lr * dw
-							}
+							dw += -1.0 / smr.softmax[bi][item.Label] * smr.softmaxGradient[bi][item.Label][i] * item.Features[j]
 						}
 					}
-					db := -1.0 / smr.softmax[item.Label] * smr.softmaxGradient[item.Label][i]
-					if !math.IsNaN(db) {
-						smr.bias[i] -= lr * db
+					dw /= float64(oneBatch)
+					if !math.IsNaN(dw) {
+						smr.weights[i][j] -= lr * dw
 					}
+				}
+				db := 0.0
+				for bi, index := range randArray[start:end] {
+					item := training[randArray[index]]
+					db += -1.0 / smr.softmax[bi][item.Label] * smr.softmaxGradient[bi][item.Label][i]
+				}
+				db /= float64(oneBatch)
+				if !math.IsNaN(db) {
+					smr.bias[i] -= lr * db
 				}
 			}
 		}
@@ -351,6 +372,6 @@ func (smr *SoftMaxRegression) Train(iter int) {
 		}
 		fmt.Println("------------------- iter ", it, " ------------------ ac ", float64(correctCount)/testCount)
 
-		//Shuffle(randArray)
+		Shuffle(randArray)
 	}
 }

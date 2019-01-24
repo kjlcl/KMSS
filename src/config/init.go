@@ -25,7 +25,7 @@ type TrainConf struct {
 	TrainPath    string  `yaml:"train"`
 	TestPath     string  `yaml:"test"`
 	FeatureLen   int     `yaml:"featureLen"`
-	BatchCount   int     `yaml:"batchCount"`
+	OneBatch     int     `yaml:"onebatch"`
 	LearningRate float64 `yaml:"learningRate"`
 	Normal       string  `yaml:"normal"`
 	NormalRate   float64 `yaml:"normalRate"`

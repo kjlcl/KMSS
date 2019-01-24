@@ -16,7 +16,7 @@ softmax:
   train: "../resource/Mnist/mnist_train.csv"
   test: "../resource/Mnist/mnist_test.csv"
   featureLen: 784
-  learningRate: 0.001
-  batchCount: 500
+  learningRate: 0.005
+  onebatch: 100
   normal: "l2"
   normalRate: 0.01
