@@ -179,7 +179,7 @@ func (smr *SoftMaxRegression) init() {
 	for i := 0; i < oneBatch; i++ {
 		smr.softmax[i] = make([]float64, smr.labelCount)
 	}
-	smr.bias = make([]float64, oneBatch)
+	smr.bias = make([]float64, smr.labelCount)
 	smr.lossGradient = make([][]float64, oneBatch)
 	for i := 0; i < oneBatch; i++ {
 		smr.lossGradient[i] = make([]float64, smr.labelCount)
