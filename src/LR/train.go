@@ -30,8 +30,6 @@ type SoftMaxRegression struct {
 	softmax         []float64
 	bias            []float64
 	softmaxGradient [][]float64
-	trainPath       string
-	testPath        string
 }
 
 type SparseTrainItem struct {
@@ -192,7 +190,7 @@ func (smr *SoftMaxRegression) init() {
 
 func (smr *SoftMaxRegression) forward(x []float64) {
 
-	max := 0.0
+	max := -1000000000.0
 	for i := 0; i < smr.labelCount; i++ {
 		// TODO 检查weights 和x 维度是否一致
 		weights := smr.weights[i]
@@ -205,8 +203,13 @@ func (smr *SoftMaxRegression) forward(x []float64) {
 			max = smr.softmax[i]
 		}
 	}
+	sum := 0.0
 	for i := 0; i < smr.labelCount; i++ {
 		smr.softmax[i] = math.Exp(smr.softmax[i] - max)
+		sum += smr.softmax[i]
+	}
+	for i := 0; i < smr.labelCount; i++ {
+		smr.softmax[i] = smr.softmax[i] / sum
 	}
 
 	for i := 0; i < smr.labelCount; i++ {
@@ -220,6 +223,25 @@ func (smr *SoftMaxRegression) forward(x []float64) {
 	}
 }
 
+func (smr *SoftMaxRegression) predict(item *IndexTrainItem) bool {
+
+	max := -10000000000.0
+	predictLabel := 0
+	weightCount := len(smr.weights[0])
+	for i := 0; i < smr.labelCount; i++ {
+		tmp := 0.0
+		for j := 0; j < weightCount; j++ {
+			tmp += smr.weights[i][j] * item.Features[j]
+		}
+		smr.softmax[i] = tmp + smr.bias[i]
+		if smr.softmax[i] > max {
+			max = smr.softmax[i]
+			predictLabel = i
+		}
+	}
+	return predictLabel == item.Label
+}
+
 func (lr *LogisticRegression) RandomWriteTest() {
 	length := len(lr.weights)
 
@@ -231,10 +253,15 @@ func (lr *LogisticRegression) RandomWriteTest() {
 
 func (smr *SoftMaxRegression) Train(iter int) {
 
+	smr.init()
+
 	trainCount := 0
 	var training []IndexTrainItem
 	var testing []IndexTrainItem
-	if file, err := os.Open(smr.trainPath); err == nil {
+	lr := config.GetSoftmaxConf().LearningRate
+	trainPath := config.GetSoftmaxConf().TrainPath
+	testPath := config.GetSoftmaxConf().TestPath
+	if file, err := os.Open(trainPath); err == nil {
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
@@ -252,7 +279,7 @@ func (smr *SoftMaxRegression) Train(iter int) {
 			}
 		}
 	}
-	if file, err := os.Open(smr.testPath); err == nil {
+	if file, err := os.Open(testPath); err == nil {
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
@@ -275,13 +302,12 @@ func (smr *SoftMaxRegression) Train(iter int) {
 		randArray[i] = i
 	}
 
-	batchCount := config.GetSoftmaxConf().BatchCount
-	for i := 0; i < iter; i++ {
-		end := trainCount / batchCount
-
-		for batchIndex := 0; batchIndex < end; batchIndex++ {
-			start := batchIndex * batchCount
-			end := start + batchCount
+	oneBatch := config.GetSoftmaxConf().BatchCount
+	batchSize := trainCount / oneBatch
+	for it := 0; it < iter; it++ {
+		for batchIndex := 0; batchIndex < batchSize; batchIndex++ {
+			start := batchIndex * oneBatch
+			end := start + oneBatch
 			if end > trainCount {
 				end = trainCount
 			}
@@ -290,14 +316,41 @@ func (smr *SoftMaxRegression) Train(iter int) {
 				smr.forward(item.Features)
 				for i := 0; i < smr.labelCount; i++ {
 					for j := 0; j < smr.featureLen; j++ {
-						dw := -1.0 / smr.softmax[i] * smr.softmaxGradient[item.Label][i] * item.Features[j]
-						smr.weights[i][j] += 0.01 * dw
+						if item.Features[j] != 0 {
+							dw := -1.0 / smr.softmax[item.Label] * smr.softmaxGradient[item.Label][i] * item.Features[j]
+							if !math.IsNaN(dw) {
+								smr.weights[i][j] -= lr * dw
+							}
+						}
 					}
-
+					db := -1.0 / smr.softmax[item.Label] * smr.softmaxGradient[item.Label][i]
+					if !math.IsNaN(db) {
+						smr.bias[i] -= lr * db
+					}
 				}
 			}
 		}
 
-		Shuffle(randArray)
+		//correctCount := 0
+		//trainCount := float64(len(training))
+		//for i := 0; i < len(training); i++ {
+		//	item := training[i]
+		//	if smr.predict(&item) {
+		//		correctCount += 1
+		//	}
+		//}
+		//fmt.Println("------------------- iter ", it, " ------------------ ac ", float64(correctCount)/trainCount)
+
+		correctCount := 0
+		testCount := float64(len(testing))
+		for i := 0; i < len(testing); i++ {
+			item := testing[i]
+			if smr.predict(&item) {
+				correctCount += 1
+			}
+		}
+		fmt.Println("------------------- iter ", it, " ------------------ ac ", float64(correctCount)/testCount)
+
+		//Shuffle(randArray)
 	}
 }

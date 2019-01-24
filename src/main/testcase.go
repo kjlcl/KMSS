@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 )
 
 func maxent() {
@@ -27,25 +26,21 @@ func maxent() {
 	//fmt.Println(math.Exp(0.9))
 }
 
-func _main() {
-	start := time.Now()
-	array := []float64{0.8, 0.7, 0.55, 0.12321, 0.99, 1.8}
-	for i := 0; i < 100000; i++ {
-		for _, v := range array {
-			math.Log(v)
-		}
-	}
-	fmt.Println(time.Now().Sub(start))
+func main_() {
+	a := 0.2
+	fmt.Println(a + math.NaN())
 }
 
-func main() {
-	a := LR.SoftMaxRegression{}
-	a.InitWeights(300000000)
+func waitSignal() {
 
-	a.RandomWriteTest()
 	fmt.Println("done")
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 
 	<-signalChan
+}
+
+func main() {
+	a := LR.SoftMaxRegression{}
+	a.Train(100)
 }
