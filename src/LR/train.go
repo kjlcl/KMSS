@@ -18,8 +18,6 @@ type LogisticRegression struct {
 	weights    []float64
 	bias       float64
 	featureLen int
-	trainPath  string
-	testPath   string
 }
 
 type SoftMaxRegression struct {
@@ -52,20 +50,37 @@ func Shuffle(vals []int) {
 	}
 }
 
-func (lr *LogisticRegression) init() {
-	lr.trainPath = config.GetLRConf().TrainPath
-	lr.testPath = config.GetLRConf().TestPath
-}
-
 func (lr *LogisticRegression) sigmoid(z float64) float64 {
 	return 1.0 / (1 + math.Exp(-z))
 }
 
+func (lr *LogisticRegression) init() {
+	lr.featureLen = config.GetLRConf().FeatureLen
+	lr.weights = make([]float64, lr.featureLen)
+}
+
+func (lr *LogisticRegression) predict(item *SparseTrainItem) bool {
+	sum := 0.0
+	for k, score := range item.Features {
+		sum += lr.weights[k] * score
+	}
+	p := lr.sigmoid(sum + lr.bias)
+	y := item.Label
+	if y == 1 && p >= 0.5 || y == 0 && p < 0.5 {
+		return true
+	}
+	return false
+}
+
 func (lr *LogisticRegression) Train(iter int) {
+	lr.init()
+
 	learningRate := config.GetLRConf().LearningRate
 	var training []SparseTrainItem
 	var testing []SparseTrainItem
-	if file, err := os.Open(lr.trainPath); err == nil {
+	trainPath := config.GetLRConf().TrainPath
+	testPath := config.GetLRConf().TestPath
+	if file, err := os.Open(trainPath); err == nil {
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
@@ -89,7 +104,7 @@ func (lr *LogisticRegression) Train(iter int) {
 			}
 		}
 	}
-	if file, err := os.Open(lr.testPath); err == nil {
+	if file, err := os.Open(testPath); err == nil {
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
@@ -116,8 +131,8 @@ func (lr *LogisticRegression) Train(iter int) {
 
 	trainCount := len(training)
 	batchCount := config.GetLRConf().OneBatch
-	gradients := make([]float64, batchCount)
-	for i := 0; i < iter; i++ {
+	residual := make([]float64, batchCount)
+	for it := 0; it < iter; it++ {
 		end := trainCount / batchCount
 
 		for batchIndex := 0; batchIndex < end; batchIndex++ {
@@ -126,46 +141,37 @@ func (lr *LogisticRegression) Train(iter int) {
 			if end > trainCount {
 				end = trainCount
 			}
-			for j := 0; j < batchCount; j++ {
-				gradients[j] = 0.0
-			}
 			updateIndex := make(map[int]int)
 			db := 0.0
-			for j := start; j < end; j++ {
-				item := training[j]
+			for bi, item := range training[start:end] {
 				tmp := 0.0
 				for k, score := range item.Features {
 					tmp += score * lr.weights[k]
 					updateIndex[k] = 1
 				}
-				gradients[j] = float64(item.Label) - tmp - lr.bias
+				residual[bi] = float64(item.Label) - lr.sigmoid(tmp+lr.bias)
+				db += residual[bi]
+			}
+			lr.bias += learningRate * (db / float64(end-start))
 
-				db += gradients[j]
-			}
-			for _, f := range updateIndex {
+			for fi := range updateIndex {
 				dwf := 0.0
-				for j := start; j < end; j++ {
-					dwf += gradients[j] * training[j].Features[f]
+				for bi, item := range training[start:end] {
+					if score, ok := item.Features[fi]; ok {
+						dwf += residual[bi] * score
+					}
 				}
-				lr.weights[f] += learningRate * dwf / float64(batchCount)
+				lr.weights[fi] += learningRate * dwf / float64(end-start)
 			}
-			lr.bias += learningRate * (db / float64(batchCount))
 		}
 
 		correctCount := 0
 		testCount := float64(len(testing))
 		for i := 0; i < len(testing); i++ {
 			item := testing[i]
-			sum := 0.0
-			for k, score := range item.Features {
-				sum += lr.weights[k] * score
-			}
-			p := lr.sigmoid(sum + lr.bias)
-			if item.Label == 1 && p >= 0.5 || item.Label == 0 && p < 0.5 {
-				correctCount++
-			}
+
 		}
-		print("iter ", iter, " ac ", float64(correctCount)/testCount)
+		fmt.Println("iter ", it, " test ac ", float64(correctCount)/testCount, "correct count: ", correctCount)
 
 	}
 }

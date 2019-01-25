@@ -4,11 +4,11 @@ log:
   level: "DEBUG"
 
 lr:
-  train: "../"
-  test: "../"
-  featureLen: 3000000
+  train: "../resource/ctr_train.csv"
+  test: "../resource/ctr_test.csv"
+  featureLen: 10000
   learningRate: 0.01
-  batchCount: 500
+  onebatch: 500
   normal: "l2"
   normalRate: 0.01
 
@@ -16,7 +16,7 @@ softmax:
   train: "../resource/Mnist/mnist_train.csv"
   test: "../resource/Mnist/mnist_test.csv"
   featureLen: 784
-  learningRate: 0.005
-  onebatch: 100
+  learningRate: 0.01
+  onebatch: 10
   normal: "l2"
   normalRate: 0.01

@@ -41,6 +41,6 @@ func waitSignal() {
 }
 
 func main() {
-	a := LR.SoftMaxRegression{}
+	a := LR.LogisticRegression{}
 	a.Train(100)
 }
