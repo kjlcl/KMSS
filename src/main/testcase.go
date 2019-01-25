@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func maxent() {
@@ -26,9 +27,10 @@ func maxent() {
 	//fmt.Println(math.Exp(0.9))
 }
 
-func main_() {
+func main() {
 	a := 0.2
 	fmt.Println(a + math.NaN())
+	fmt.Println(time.Now().Unix())
 }
 
 func waitSignal() {
@@ -40,7 +42,7 @@ func waitSignal() {
 	<-signalChan
 }
 
-func main() {
+func main2() {
 	a := LR.LogisticRegression{}
 	a.Train(100)
 }

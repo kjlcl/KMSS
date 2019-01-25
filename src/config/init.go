@@ -29,6 +29,7 @@ type TrainConf struct {
 	LearningRate float64 `yaml:"learningRate"`
 	Normal       string  `yaml:"normal"`
 	NormalRate   float64 `yaml:"normalRate"`
+	ModelPath    string  `yaml:"modelPath"`
 }
 
 func (logConf *LogConf) updateFileName(logName string) {

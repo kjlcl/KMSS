@@ -11,6 +11,7 @@ lr:
   onebatch: 500
   normal: "l2"
   normalRate: 0.01
+  modelPath: "../resource"
 
 softmax:
   train: "../resource/Mnist/mnist_train.csv"
@@ -20,3 +21,4 @@ softmax:
   onebatch: 10
   normal: "l2"
   normalRate: 0.01
+  modelPath: "../resource"

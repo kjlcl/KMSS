@@ -3,6 +3,7 @@ package LR
 import (
 	"bufio"
 	"config"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
@@ -169,11 +170,24 @@ func (lr *LogisticRegression) Train(iter int) {
 		testCount := float64(len(testing))
 		for i := 0; i < len(testing); i++ {
 			item := testing[i]
-
+			if lr.predict(&item) {
+				correctCount += 1
+			}
 		}
 		fmt.Println("iter ", it, " test ac ", float64(correctCount)/testCount, "correct count: ", correctCount)
 
 	}
+
+	if data, err := json.Marshal(lr); err == nil {
+		path := fmt.Sprintf("%s/%d.model",
+			config.GetLRConf().ModelPath, time.Now().Unix())
+		if file, err := os.Open(path); err == nil {
+			if _, err := file.Write(data); err != nil {
+				fmt.Println(err.Error())
+			}
+		}
+	}
+
 }
 
 func (smr *SoftMaxRegression) init() {
