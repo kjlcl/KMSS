@@ -5,20 +5,25 @@ import (
 	"config"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
-const LoadDataInMem bool = true
+const (
+	LoadDataInMem bool   = true
+	Sep           string = " "
+)
 
 type LogisticRegression struct {
-	weights    []float64
-	bias       float64
-	featureLen int
+	Weights    []float64
+	Bias       float64
+	FeatureLen int
 }
 
 type SoftMaxRegression struct {
@@ -41,7 +46,7 @@ type IndexTrainItem struct {
 	Features []float64
 }
 
-func Shuffle(vals []int) {
+func KnuthShuffle(vals []int) {
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 	for len(vals) > 0 {
 		n := len(vals)
@@ -56,37 +61,72 @@ func (lr *LogisticRegression) sigmoid(z float64) float64 {
 }
 
 func (lr *LogisticRegression) init() {
-	lr.featureLen = config.GetLRConf().FeatureLen
-	lr.weights = make([]float64, lr.featureLen)
+	lr.FeatureLen = config.GetLRConf().FeatureLen
+	lr.Weights = make([]float64, lr.FeatureLen)
 }
 
-func (lr *LogisticRegression) predict(item *SparseTrainItem) bool {
+func (lr *LogisticRegression) TestLoad(modelPath string) (err error) {
+	return lr.initLRModel(modelPath)
+}
+
+func (lr *LogisticRegression) initLRModel(modelPath string) (err error) {
+	if f, err := os.Open(modelPath); err == nil {
+		if data, err := ioutil.ReadAll(f); err == nil {
+			if err = json.Unmarshal(data, lr); err == nil {
+				fmt.Println("load model from break point ", modelPath)
+			} else {
+				fmt.Println("broken file ", err.Error())
+			}
+		} else {
+			fmt.Println("invalid break point ", err.Error())
+		}
+	} else {
+		fmt.Println("invalid break point ", err.Error())
+	}
+	return
+}
+
+func (lr *LogisticRegression) Predict(item *SparseTrainItem, posScore float64) bool {
 	sum := 0.0
 	for k, score := range item.Features {
-		sum += lr.weights[k] * score
+		sum += lr.Weights[k] * score
 	}
-	p := lr.sigmoid(sum + lr.bias)
+	p := lr.sigmoid(sum + lr.Bias)
 	y := item.Label
-	if y == 1 && p >= 0.5 || y == 0 && p < 0.5 {
+	if y == 1 && p >= posScore {
+		return true
+	}
+	if y == 0 && p < posScore {
 		return true
 	}
 	return false
 }
 
-func (lr *LogisticRegression) Train(iter int) {
+func (lr *LogisticRegression) TrainMultiWorks(iter int, workerNum int) {
 	lr.init()
+
+}
+
+func (lr *LogisticRegression) Train(iter int) {
+	if config.GetLRConf().BPointPath == "" {
+		lr.init()
+	} else {
+		if lr.initLRModel(config.GetLRConf().BPointPath) != nil {
+			lr.init()
+		}
+	}
 
 	learningRate := config.GetLRConf().LearningRate
 	var training []SparseTrainItem
-	var testing []SparseTrainItem
 	trainPath := config.GetLRConf().TrainPath
+	var testing []SparseTrainItem
 	testPath := config.GetLRConf().TestPath
 	if file, err := os.Open(trainPath); err == nil {
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
 			line := scanner.Text()
-			items := strings.Split(line, ",")
+			items := strings.Split(line, Sep)
 			if label, err := strconv.Atoi(items[0]); err == nil {
 				fs := make(map[int]float64)
 				for _, item := range items[1:] {
@@ -95,22 +135,26 @@ func (lr *LogisticRegression) Train(iter int) {
 						fmt.Println("error format ", line)
 						continue
 					}
-					if score, err := strconv.ParseFloat(pair[1], 64); err == nil {
-						if index, err := strconv.Atoi(pair[0]); err == nil {
+					if index, err := strconv.Atoi(pair[0]); err == nil {
+						if score, err := strconv.ParseFloat(
+							pair[1], 64); err == nil {
 							fs[index] = score
 						}
 					}
+
 				}
 				training = append(training, SparseTrainItem{Label: label, Features: fs})
 			}
 		}
+	} else {
+		panic(err.Error())
 	}
 	if file, err := os.Open(testPath); err == nil {
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
 			line := scanner.Text()
-			items := strings.Split(line, ",")
+			items := strings.Split(line, Sep)
 			if label, err := strconv.Atoi(items[0]); err == nil {
 				fs := make(map[int]float64)
 				for _, item := range items[1:] {
@@ -119,8 +163,8 @@ func (lr *LogisticRegression) Train(iter int) {
 						fmt.Println("error format ", line)
 						continue
 					}
-					if score, err := strconv.ParseFloat(pair[1], 64); err == nil {
-						if index, err := strconv.Atoi(pair[0]); err == nil {
+					if index, err := strconv.Atoi(pair[0]); err == nil {
+						if score, err := strconv.ParseFloat(pair[1], 64); err == nil {
 							fs[index] = score
 						}
 					}
@@ -128,41 +172,60 @@ func (lr *LogisticRegression) Train(iter int) {
 				testing = append(testing, SparseTrainItem{Label: label, Features: fs})
 			}
 		}
+	} else {
+		fmt.Println(err.Error())
 	}
 
 	trainCount := len(training)
 	batchCount := config.GetLRConf().OneBatch
 	residual := make([]float64, batchCount)
+	wg := sync.WaitGroup{}
+	workNum := 8
 	for it := 0; it < iter; it++ {
-		end := trainCount / batchCount
-
-		for batchIndex := 0; batchIndex < end; batchIndex++ {
-			start := batchIndex * batchCount
-			end := start + batchCount
-			if end > trainCount {
-				end = trainCount
-			}
-			updateIndex := make(map[int]int)
-			db := 0.0
-			for bi, item := range training[start:end] {
-				tmp := 0.0
-				for k, score := range item.Features {
-					tmp += score * lr.weights[k]
-					updateIndex[k] = 1
+		iterStart := time.Now()
+		endIndex := trainCount / batchCount
+		endFlag := false
+		for batchIndex := 0; batchIndex < endIndex; batchIndex += workNum {
+			for i := 0; i < workNum; i++ {
+				start := (batchIndex + i) * batchCount
+				end := start + batchCount
+				if end >= trainCount {
+					end = trainCount
+					endFlag = true
 				}
-				residual[bi] = float64(item.Label) - lr.sigmoid(tmp+lr.bias)
-				db += residual[bi]
-			}
-			lr.bias += learningRate * (db / float64(end-start))
-
-			for fi := range updateIndex {
-				dwf := 0.0
-				for bi, item := range training[start:end] {
-					if score, ok := item.Features[fi]; ok {
-						dwf += residual[bi] * score
+				wg.Add(1)
+				go func(wgg *sync.WaitGroup, start, end int) {
+					defer wgg.Done()
+					updateIndex := make(map[int]int)
+					db := 0.0
+					for bi, item := range training[start:end] {
+						tmp := 0.0
+						for k, score := range item.Features {
+							tmp += score * lr.Weights[k]
+							updateIndex[k] = 1
+						}
+						residual[bi] = float64(item.Label) - lr.sigmoid(tmp+lr.Bias)
+						db += residual[bi]
 					}
+					lr.Bias += learningRate * (db / float64(end-start))
+
+					for fi := range updateIndex {
+						dwf := 0.0
+						for bi, item := range training[start:end] {
+							if score, ok := item.Features[fi]; ok {
+								dwf += residual[bi] * score
+							}
+						}
+						lr.Weights[fi] += learningRate * dwf / float64(end-start)
+					}
+				}(&wg, start, end)
+				if endFlag {
+					break
 				}
-				lr.weights[fi] += learningRate * dwf / float64(end-start)
+			}
+			wg.Wait()
+			if endFlag {
+				break
 			}
 		}
 
@@ -170,24 +233,60 @@ func (lr *LogisticRegression) Train(iter int) {
 		testCount := float64(len(testing))
 		for i := 0; i < len(testing); i++ {
 			item := testing[i]
-			if lr.predict(&item) {
+			if lr.Predict(&item, 0.5) {
 				correctCount += 1
 			}
 		}
-		fmt.Println("iter ", it, " test ac ", float64(correctCount)/testCount, "correct count: ", correctCount)
-
+		fmt.Printf(
+			"iter %d, test ac %.06f  time cost %+v\n",
+			it, float64(correctCount)/testCount, time.Now().Sub(iterStart).String())
 	}
 
 	if data, err := json.Marshal(lr); err == nil {
 		path := fmt.Sprintf("%s/%d.model",
 			config.GetLRConf().ModelPath, time.Now().Unix())
-		if file, err := os.Open(path); err == nil {
+		if file, err := os.Create(path); err == nil {
+			defer file.Close()
 			if _, err := file.Write(data); err != nil {
 				fmt.Println(err.Error())
+			} else {
+				fmt.Println("model saved to ", path)
+			}
+		} else {
+			fmt.Println(err.Error())
+		}
+	} else {
+		fmt.Println(err.Error())
+	}
+
+}
+
+func (lr *LogisticRegression) TestCases() {
+	lr.initLRModel("../resource/1553269965.model")
+	if file, err := os.Open(config.GetLRConf().TestPath); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			items := strings.Split(line, ",")
+			if label, err := strconv.Atoi(items[0]); err == nil {
+				fs := make(map[int]float64)
+				for _, item := range items[1:] {
+					pair := strings.Split(item, ":")
+					if len(pair) != 2 {
+						fmt.Println("error format ", line)
+						continue
+					}
+					if score, err := strconv.ParseFloat(pair[1], 64); err == nil {
+						if index, err := strconv.Atoi(pair[0]); err == nil {
+							fs[index] = score
+						}
+					}
+				}
+				lr.Predict(&SparseTrainItem{Label: label, Features: fs}, 0.5)
 			}
 		}
 	}
-
 }
 
 func (smr *SoftMaxRegression) init() {
@@ -274,11 +373,11 @@ func (smr *SoftMaxRegression) predict(item *IndexTrainItem) bool {
 }
 
 func (lr *LogisticRegression) RandomWriteTest() {
-	length := len(lr.weights)
+	length := len(lr.Weights)
 
 	for i := 0; i < length; i++ {
 		index := rand.Float64() * float64(length)
-		lr.weights[int(index)] = rand.Float64()
+		lr.Weights[int(index)] = rand.Float64()
 	}
 }
 
@@ -289,7 +388,7 @@ func (smr *SoftMaxRegression) Train(iter int) {
 	trainCount := 0
 	var training []IndexTrainItem
 	var testing []IndexTrainItem
-	lr := config.GetSoftmaxConf().LearningRate
+	learningRate := config.GetSoftmaxConf().LearningRate
 	trainPath := config.GetSoftmaxConf().TrainPath
 	testPath := config.GetSoftmaxConf().TestPath
 	if file, err := os.Open(trainPath); err == nil {
@@ -303,7 +402,7 @@ func (smr *SoftMaxRegression) Train(iter int) {
 				fs := make([]float64, smr.featureLen)
 				for i, item := range items[1:] {
 					if pixel, err := strconv.ParseFloat(item, 64); err == nil {
-						fs[i] = float64(pixel) / 255
+						fs[i] = pixel / 255
 					}
 				}
 				training = append(training, IndexTrainItem{Label: label, Features: fs})
@@ -320,7 +419,7 @@ func (smr *SoftMaxRegression) Train(iter int) {
 				fs := make([]float64, smr.featureLen)
 				for i, item := range items[1:] {
 					if pixel, err := strconv.ParseFloat(item, 64); err == nil {
-						fs[i] = float64(pixel) / 255
+						fs[i] = pixel / 255
 					}
 				}
 				testing = append(testing, IndexTrainItem{Label: label, Features: fs})
@@ -332,6 +431,7 @@ func (smr *SoftMaxRegression) Train(iter int) {
 	for i := 0; i < trainCount; i++ {
 		randArray[i] = i
 	}
+	KnuthShuffle(randArray)
 
 	oneBatch := config.GetSoftmaxConf().OneBatch
 	batchSize := trainCount / oneBatch
@@ -357,7 +457,7 @@ func (smr *SoftMaxRegression) Train(iter int) {
 					}
 					dw /= float64(oneBatch)
 					if !math.IsNaN(dw) {
-						smr.weights[i][j] -= lr * dw
+						smr.weights[i][j] -= learningRate * dw
 					}
 				}
 				db := 0.0
@@ -367,7 +467,7 @@ func (smr *SoftMaxRegression) Train(iter int) {
 				}
 				db /= float64(oneBatch)
 				if !math.IsNaN(db) {
-					smr.bias[i] -= lr * db
+					smr.bias[i] -= learningRate * db
 				}
 			}
 		}
@@ -376,7 +476,7 @@ func (smr *SoftMaxRegression) Train(iter int) {
 		//trainCount := float64(len(training))
 		//for i := 0; i < len(training); i++ {
 		//	item := training[i]
-		//	if smr.predict(&item) {
+		//	if smr.Predict(&item) {
 		//		correctCount += 1
 		//	}
 		//}
@@ -392,6 +492,6 @@ func (smr *SoftMaxRegression) Train(iter int) {
 		}
 		fmt.Println("------------------- iter ", it, " ------------------ ac ", float64(correctCount)/testCount)
 
-		Shuffle(randArray)
+		KnuthShuffle(randArray)
 	}
 }
